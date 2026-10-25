@@ -37,6 +37,9 @@ services:
       SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD}
       # Elasticsearch embarqué exige vm.max_map_count=262144 : sous Docker Desktop on désactive plutôt le mmap.
       SONAR_SEARCH_JAVAADDITIONALOPTS: -Dnode.store.allow_mmap=false
+      # SonarQube refuse par défaut les webhooks vers des adresses privées (dont le réseau Docker) : sans cela, Jenkins
+      # n'est jamais prévenu de la fin de l'analyse et « waitForQualityGate » expire. À ne pas faire en production.
+      SONAR_VALIDATEWEBHOOKS: "false"
       # Plafonds mémoire des trois JVM de SonarQube (web, moteur de calcul, recherche).
       SONAR_WEB_JAVAOPTS: -Xmx512m -Xms256m
       SONAR_CE_JAVAOPTS: -Xmx512m -Xms256m
