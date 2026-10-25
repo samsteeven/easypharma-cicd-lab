@@ -3,3 +3,4 @@
 .gitlab-ci-local/
 node_modules/
 work/
+.gitlab-ci-local-variables.yml
