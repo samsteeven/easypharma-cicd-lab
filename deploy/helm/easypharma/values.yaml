@@ -1,0 +1,57 @@
+# Valeurs du backend EasyPharma. Le CI n'écrit que `image.tag` (déploiement GitOps : un commit = une version).
+
+image:
+  # « localhost:5001 » est le registre local du laboratoire ; le cluster kind le lit grâce à la configuration de containerd
+  # écrite par scripts/kind-up.sh.
+  repository: localhost:5001/easypharma-backend
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  port: 8080
+
+# Secret Kubernetes qui contient JWT_SECRET et DATABASE_PASSWORD. Créé hors Git par scripts/k8s-secrets.sh :
+# un secret ne se commite jamais (en production : External Secrets, Sealed Secrets ou le coffre de l'équipe).
+existingSecret: easypharma-secrets
+
+env:
+  SPRING_PROFILES_ACTIVE: prod
+  # Le schéma est créé par Hibernate : le dépôt PostgreSQL n'a pas de migrations chargées (voir le README du backend).
+  SPRING_JPA_HIBERNATE_DDL_AUTO: update
+  DATABASE_USERNAME: postgres
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 896Mi
+
+probes:
+  startupFailureThreshold: 36
+  periodSeconds: 5
+
+postgres:
+  enabled: true
+  image: postgis/postgis:16-3.4-alpine
+  database: easypharma_db
+  storage: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 384Mi
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 96Mi

@@ -1,0 +1,79 @@
+# Même pipeline que le Jenkinsfile, écrit pour GitLab CI : build et tests, SonarQube (porte qualité), image Docker.
+# L'application est clonée à chaque job : ce dépôt ne contient que la définition du pipeline.
+#
+# Variables à définir dans GitLab (Settings > CI/CD > Variables, « masquée ») ou, pour une exécution locale avec
+# gitlab-ci-local, dans .gitlab-ci-local-variables.yml (ignoré par git) :
+#   SONAR_TOKEN     jeton d'analyse SonarQube
+#   SONAR_HOST_URL  adresse de SonarQube vue depuis le conteneur du job (local : http://host.docker.internal:9000)
+
+stages:
+  - build
+  - quality
+  - package
+
+variables:
+  APP_REPO: "https://github.com/samsteeven/easypharma-backend-lab.git"
+  APP_BRANCH: "main"
+  IMAGE_NAME: "easypharma-backend"
+  REGISTRY: "localhost:5001"
+  # Le dépôt Maven est dans le projet pour pouvoir être mis en cache (GitLab ne met en cache que ce qui est dans le projet).
+  MAVEN_OPTS: "-Xmx1024m -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+
+cache:
+  key: maven-repository
+  paths:
+    - .m2/repository
+
+# Récupération du code : même rôle que l'étape « Récupération du code » de Jenkins.
+.clone-app: &clone-app
+  - git clone --depth 1 --branch "$APP_BRANCH" "$APP_REPO" app
+  - cd app
+  - export GIT_SHORT=$(git rev-parse --short HEAD)
+
+build-et-tests:
+  stage: build
+  image: maven:3.9.9-eclipse-temurin-21
+  variables:
+    SPRING_PROFILES_ACTIVE: "test"
+    # Valeur factice, propre aux tests : le contexte Spring exige un secret JWT pour démarrer.
+    JWT_SECRET: "valeur-factice-pour-les-tests-uniquement-ne-jamais-utiliser-en-production-0123456789"
+  script:
+    - *clone-app
+    - chmod +x mvnw
+    - ./mvnw -B -ntp clean verify -Dmaven.javadoc.skip=true
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - app/
+    reports:
+      junit: app/target/surefire-reports/*.xml
+
+sonarqube:
+  stage: quality
+  image: maven:3.9.9-eclipse-temurin-21
+  needs: ["build-et-tests"]
+  script:
+    - cd app
+    # qualitygate.wait : le scanner interroge SonarQube jusqu'au verdict. Pas de webhook à déclarer (contrairement à
+    # Jenkins), et pas besoin que SonarQube joigne le runner.
+    - >
+      ./mvnw -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+      -Dsonar.projectKey=easypharma_backend -Dsonar.projectName='EasyPharma backend'
+      -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.token="$SONAR_TOKEN"
+      -Dsonar.qualitygate.wait=true -Dsonar.scm.disabled=true
+
+image-docker:
+  stage: package
+  # Le client Docker parle au démon de l'hôte (socket monté, voir le README) : « localhost:5001 » est le registre local.
+  # Sur GitLab.com on utiliserait plutôt docker-in-docker ou Kaniko et le registre du projet ($CI_REGISTRY_IMAGE).
+  image: docker:27-cli
+  needs: ["build-et-tests"]
+  script:
+    - cd app
+    - export GIT_SHORT=$(git rev-parse --short HEAD)
+    - cp ../resources/docker/Dockerfile.jar Dockerfile.ci
+    - JAR=$(ls target/*.jar | grep -v '.original' | head -1)
+    - TAG="${GIT_SHORT}-${CI_PIPELINE_ID}"
+    - docker build -f Dockerfile.ci --build-arg JAR_FILE="$JAR" --label org.opencontainers.image.revision="$GIT_SHORT" -t "$REGISTRY/$IMAGE_NAME:$TAG" .
+    - docker push "$REGISTRY/$IMAGE_NAME:$TAG"
+    - echo "Image publiée $REGISTRY/$IMAGE_NAME:$TAG"

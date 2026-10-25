@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    {{- include "easypharma.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "easypharma.selector" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http

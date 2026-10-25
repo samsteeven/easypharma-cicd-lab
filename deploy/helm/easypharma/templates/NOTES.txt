@@ -1,0 +1,4 @@
+EasyPharma déployé (release {{ .Release.Name }}, image {{ .Values.image.repository }}:{{ .Values.image.tag }}).
+Accès local : kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-backend 8080:{{ .Values.service.port }}
+Santé :        curl http://localhost:8080/actuator/health
+Le secret « {{ .Values.existingSecret }} » doit exister (scripts/k8s-secrets.sh).

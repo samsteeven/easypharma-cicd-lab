@@ -1,0 +1,11 @@
+# Cluster kind du laboratoire : un seul noeud (la mémoire de Docker est limitée à 8 Go sur cette machine).
+# La configuration de containerd pour le registre local est écrite par scripts/kind-up.sh.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: easypharma
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+nodes:
+  - role: control-plane

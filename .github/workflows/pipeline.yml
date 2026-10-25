@@ -1,0 +1,101 @@
+# Même pipeline que le Jenkinsfile et le .gitlab-ci.yml, écrit pour GitHub Actions : build et tests, image Docker.
+# Pas d'étape SonarQube : le serveur du laboratoire est local et injoignable depuis les runners GitHub.
+# (SonarCloud ou un SonarQube exposé la remplaceraient : voir le README.)
+name: Pipeline backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_branch:
+        description: "Branche de easypharma-backend-lab à construire"
+        default: main
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pipeline.yml"
+      - "resources/docker/**"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/samsteeven/easypharma-backend
+
+jobs:
+  build-et-tests:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Récupération de ce dépôt (définition du pipeline)
+        uses: actions/checkout@v4
+
+      - name: Récupération de l'application
+        uses: actions/checkout@v4
+        with:
+          repository: samsteeven/easypharma-backend-lab
+          ref: ${{ inputs.app_branch || 'main' }}
+          path: app
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: app/pom.xml
+
+      - name: Build et tests
+        working-directory: app
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          # Valeur factice, propre aux tests : le contexte Spring exige un secret JWT pour démarrer.
+          JWT_SECRET: valeur-factice-pour-les-tests-uniquement-ne-jamais-utiliser-en-production-0123456789
+          MAVEN_OPTS: -Xmx1024m
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -ntp clean verify -Dmaven.javadoc.skip=true
+
+      - name: Étiquette de l'image
+        id: meta
+        working-directory: app
+        run: echo "tag=$(git rev-parse --short HEAD)-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Publication du rapport de tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapports-tests
+          path: |
+            app/target/surefire-reports/*.xml
+            app/target/site/jacoco/jacoco.xml
+          if-no-files-found: ignore
+
+      - name: Conservation du JAR pour l'étape suivante
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar
+          path: app/target/*.jar
+
+  image-docker:
+    needs: build-et-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jar
+          path: jar
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Construction et publication
+        run: |
+          JAR=$(ls jar/*.jar | grep -v '.original' | head -1)
+          cp resources/docker/Dockerfile.jar Dockerfile.ci
+          TAG="${{ needs.build-et-tests.outputs.tag }}"
+          docker build -f Dockerfile.ci --build-arg JAR_FILE="$JAR" -t "$IMAGE:$TAG" .
+          docker push "$IMAGE:$TAG"
+          echo "Image publiée : $IMAGE:$TAG" >> "$GITHUB_STEP_SUMMARY"

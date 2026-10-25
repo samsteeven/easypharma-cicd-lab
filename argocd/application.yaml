@@ -1,0 +1,27 @@
+# Application ArgoCD : le chart Helm de ce dépôt est synchronisé automatiquement vers le cluster.
+# Un changement de deploy/helm/easypharma/values.yaml (par exemple image.tag) poussé sur main est déployé sans
+# intervention ; selfHeal annule les modifications faites à la main dans le cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: easypharma
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/samsteeven/easypharma-cicd-lab.git
+    targetRevision: main
+    path: deploy/helm/easypharma
+    helm:
+      releaseName: easypharma
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: easypharma
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
