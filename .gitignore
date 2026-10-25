@@ -1,0 +1,5 @@
+.env
+*.log
+.gitlab-ci-local/
+node_modules/
+work/

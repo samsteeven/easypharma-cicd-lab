@@ -1,0 +1,75 @@
+# Phase 1 du laboratoire : Jenkins + SonarQube + registre d'images local.
+# Les ports sont publiés sur 127.0.0.1 uniquement. Docker dispose de 8 Go sur cette machine : cette pile s'arrête
+# (docker compose down) avant de démarrer le cluster kind de la phase 2.
+name: easypharma-cicd
+
+services:
+  registry:
+    image: registry:2
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - registrydata:/var/lib/registry
+    restart: unless-stopped
+
+  sonar-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: ${SONAR_DB_PASSWORD:?définir SONAR_DB_PASSWORD dans .env (python scripts/make-env.py)}
+      POSTGRES_DB: sonar
+    volumes:
+      - sonardb:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+
+  sonarqube:
+    image: sonarqube:community
+    depends_on:
+      sonar-db: { condition: service_healthy }
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD}
+      # Elasticsearch embarqué exige vm.max_map_count=262144 : sous Docker Desktop on désactive plutôt le mmap.
+      SONAR_SEARCH_JAVAADDITIONALOPTS: -Dnode.store.allow_mmap=false
+      # Plafonds mémoire des trois JVM de SonarQube (web, moteur de calcul, recherche).
+      SONAR_WEB_JAVAOPTS: -Xmx512m -Xms256m
+      SONAR_CE_JAVAOPTS: -Xmx512m -Xms256m
+      SONAR_SEARCH_JAVAOPTS: -Xmx512m -Xms512m
+    volumes:
+      - sonardata:/opt/sonarqube/data
+      - sonarlogs:/opt/sonarqube/logs
+      - sonarext:/opt/sonarqube/extensions
+    ports:
+      - "127.0.0.1:9000:9000"
+    mem_limit: 2500m
+    restart: unless-stopped
+
+  jenkins:
+    build: ./jenkins
+    environment:
+      JAVA_OPTS: -Xmx768m -Djenkins.install.runSetupWizard=false
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?définir JENKINS_ADMIN_PASSWORD dans .env}
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+    # root pour accéder au socket Docker de l'hôte : acceptable dans un laboratoire local, à proscrire en production.
+    user: root
+    volumes:
+      - jenkinshome:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 1800m
+    restart: unless-stopped
+
+volumes:
+  registrydata:
+  sonardb:
+  sonardata:
+  sonarlogs:
+  sonarext:
+  jenkinshome:

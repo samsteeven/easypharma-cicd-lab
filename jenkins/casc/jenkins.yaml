@@ -1,0 +1,65 @@
+# Configuration de Jenkins par code (plugin Configuration as Code). Rien n'est saisi dans l'interface :
+# le mot de passe administrateur et le jeton SonarQube viennent de l'environnement du conteneur.
+jenkins:
+  systemMessage: "Laboratoire CI/CD EasyPharma : configuré par JCasC, ne pas modifier à la main."
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  crumbIssuer: "standard"
+
+unclassified:
+  location:
+    url: "http://localhost:8080/"
+  # La bibliothèque partagée vit dans ce dépôt (vars/, resources/). Les bibliothèques globales sont « de confiance » :
+  # leur code Groovy n'est pas soumis au bac à sable des scripts.
+  globalLibraries:
+    libraries:
+      - name: "easypharma-lib"
+        defaultVersion: "main"
+        allowVersionOverride: true
+        implicit: false
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "https://github.com/samsteeven/easypharma-cicd-lab.git"
+  sonarGlobalConfiguration:
+    installations:
+      - name: "sonarqube"
+        serverUrl: "http://sonarqube:9000"
+        credentialsId: "sonar-token"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              description: "Jeton d'analyse SonarQube (créé par scripts/bootstrap-sonar.sh)"
+              secret: "${SONAR_TOKEN:-inconnu}"
+
+jobs:
+  - script: >
+      pipelineJob('easypharma-backend') {
+        description('Build, tests, SonarQube et image Docker du backend EasyPharma (Jenkinsfile de ce dépôt).')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('https://github.com/samsteeven/easypharma-cicd-lab.git') }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }

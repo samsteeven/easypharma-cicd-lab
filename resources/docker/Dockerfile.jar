@@ -1,0 +1,10 @@
+# Image d'exécution du backend à partir d'un JAR déjà construit. Pas de Maven dans l'image : plus petite, plus rapide.
+FROM eclipse-temurin:21-jre-alpine
+ARG JAR_FILE
+RUN addgroup -S spring && adduser -S spring -G spring \
+    && mkdir -p /app/logs /app/uploads && chown -R spring:spring /app
+WORKDIR /app
+USER spring:spring
+COPY ${JAR_FILE} app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -1,0 +1,13 @@
+configuration-as-code
+job-dsl
+workflow-aggregator
+git
+sonar
+junit
+jacoco
+timestamper
+ws-cleanup
+pipeline-utility-steps
+pipeline-stage-view
+credentials-binding
+ansicolor
