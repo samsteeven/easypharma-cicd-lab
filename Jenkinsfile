@@ -22,7 +22,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = 'easypharma-backend'
-        REGISTRY   = 'localhost:5000'
+        REGISTRY   = 'localhost:5001'
     }
 
     stages {
