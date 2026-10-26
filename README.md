@@ -135,6 +135,7 @@ GitHub Actions : `gh workflow run pipeline.yml`.
 ## Limites
 
 - **GitLab CI n'a pas tourné sur GitLab** (voir le tableau du haut).
+- **Le `.gitlab-ci.yml` n'est pas prêt pour GitLab.com tel quel** : le job `image-docker` suppose un socket Docker monté (runner local ; sur les runners partagés il faudrait docker-in-docker ou Kaniko et le registre du projet), et le job Sonar vise un serveur local (`host.docker.internal`).
 - Un nœud Jenkins qui exécute les builds lui-même, en `root` ; un seul nœud kind ; pas de webhook Git ; pas de TLS ni d'Ingress.
 - Les durées sont des mesures isolées sur une seule machine. Elles montrent des ordres de grandeur, pas un classement des outils.
 - Les 75 tests du backend tournent sur H2 : le pipeline ne teste pas PostgreSQL ni SQL Server (voir `easypharma-backend-lab`).
