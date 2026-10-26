@@ -6,4 +6,4 @@ useDefault = true
 description = "Identifiant par défaut de SonarQube (admin:admin), documenté par l'éditeur : scripts/bootstrap-sonar.sh l'utilise une fois pour le remplacer par un mot de passe aléatoire (.env). Ce n'est pas un secret."
 condition = "AND"
 paths = ['''scripts/bootstrap-sonar\.sh$''']
-regexes = ['''admin:admin''']
+regexes = ['''admin:admin''', '''\$\{?SONAR_TOKEN''']

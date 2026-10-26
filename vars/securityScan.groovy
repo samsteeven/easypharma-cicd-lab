@@ -24,7 +24,9 @@ def call(Map cfg = [:]) {
         case 'secrets':
             // --redact : la valeur du secret n'apparaît jamais dans le journal. .gitleaks.toml (à la racine du dépôt
             // analysé) porte les exceptions.
-            sh "docker run --rm ${shared} zricethezav/gitleaks:v8.30.1 git --redact --exit-code 1 ."
+            // --log-opts=HEAD : seulement l'historique du commit construit. Le dossier de travail contient aussi l'historique de ce dépôt
+            // (récupération du Jenkinsfile), qui serait sinon analysé avec celui de l'application.
+            sh "docker run --rm ${shared} zricethezav/gitleaks:v8.30.1 git --redact --log-opts=HEAD --exit-code 1 ."
             break
         case 'dependances':
             // Rapport HIGH et CRITICAL, puis porte sur les CRITICAL corrigibles (même politique que GitHub Actions).

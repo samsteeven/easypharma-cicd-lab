@@ -24,6 +24,13 @@ if curl -s -o /dev/null -w '%{http_code}' -u "admin:admin" "$SONAR/api/authentic
   echo "Mot de passe admin remplacé."
 fi
 
+# Un jeton écrit dans .env peut ne plus exister côté serveur (volumes SonarQube supprimés puis recréés) : on le vérifie
+# au lieu de supposer qu'il est valable, sinon Jenkins reçoit un jeton refusé (HTTP 401) à l'analyse.
+if [ -n "${SONAR_TOKEN:-}" ] && ! curl -s -u "$SONAR_TOKEN:" "$SONAR/api/authentication/validate" | grep -q '"valid":true'; then
+  echo "Le jeton de .env n'est plus valable côté SonarQube : il sera recréé."
+  SONAR_TOKEN=""
+fi
+
 if [ -z "${SONAR_TOKEN:-}" ]; then
   token=$(curl -s -u "admin:$SONAR_ADMIN_PASSWORD" -X POST "$SONAR/api/user_tokens/generate" \
           --data-urlencode "name=jenkins-$(date +%s)" | python -c 'import sys,json; print(json.load(sys.stdin)["token"])')
