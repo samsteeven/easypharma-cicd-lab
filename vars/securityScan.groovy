@@ -40,7 +40,10 @@ def call(Map cfg = [:]) {
             boolean block = cfg.block != false
             sh "docker run --rm ${cache} ${sock} ${trivy} image --severity HIGH,CRITICAL --ignore-unfixed ${image}"
             // Dérogation consciente : block: false laisse passer, mais le journal garde le rapport ci-dessus.
-            sh "docker run --rm ${cache} ${sock} ${trivy} image --severity CRITICAL --ignore-unfixed --exit-code ${block ? 1 : 0} ${image}"
+            // Exceptions datées : un seul fichier pour les trois outils (resources/security/trivyignore-image), passé sur
+            // l'entrée standard parce que le conteneur Trivy ne voit pas le dossier de travail de Jenkins.
+            writeFile file: 'trivyignore-image', text: libraryResource('security/trivyignore-image')
+            sh "docker run --rm -i ${cache} ${sock} ${trivy} image --severity CRITICAL --ignore-unfixed --ignorefile /dev/stdin --exit-code ${block ? 1 : 0} ${image} < trivyignore-image"
             sh "docker run --rm ${sock} anchore/syft:v1.55.0 ${image} -o spdx-json > sbom.spdx.json"
             archiveArtifacts artifacts: 'sbom.spdx.json', allowEmptyArchive: true
             break

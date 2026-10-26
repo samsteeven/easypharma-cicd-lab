@@ -110,6 +110,8 @@ image-docker:
     - docker build -f Dockerfile.ci --build-arg JAR_FILE="$JAR" --label org.opencontainers.image.revision="$GIT_SHORT" -t "$REGISTRY/$IMAGE_NAME:$TAG" .
     # Analyse AVANT publication. BLOQUER=0 (variable du pipeline) = dérogation consciente : le rapport reste dans le journal.
     - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image --severity HIGH,CRITICAL --ignore-unfixed "$REGISTRY/$IMAGE_NAME:$TAG"
-    - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image --severity CRITICAL --ignore-unfixed --exit-code "${BLOQUER:-1}" "$REGISTRY/$IMAGE_NAME:$TAG"
+    # Exceptions datées : le même fichier que GitHub Actions et Jenkins, passé sur l'entrée standard (DooD : le conteneur
+    # Trivy ne voit pas le dossier du job).
+    - docker run --rm -i -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image --severity CRITICAL --ignore-unfixed --ignorefile /dev/stdin --exit-code "${BLOQUER:-1}" "$REGISTRY/$IMAGE_NAME:$TAG" < ../resources/security/trivyignore-image
     - docker push "$REGISTRY/$IMAGE_NAME:$TAG"
     - echo "Image publiée $REGISTRY/$IMAGE_NAME:$TAG"
