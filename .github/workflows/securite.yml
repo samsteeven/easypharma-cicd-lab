@@ -25,7 +25,7 @@ jobs:
     name: Secrets dans le dépôt et son historique
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # tout l'historique : un secret supprimé plus tard reste lisible dans les anciens commits
       - name: Installation de gitleaks (empreinte vérifiée)
@@ -46,7 +46,7 @@ jobs:
     name: Dockerfile et chart Helm
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Hadolint (Dockerfile)
         uses: hadolint/hadolint-action@v3.5.0
         with:
@@ -71,7 +71,7 @@ jobs:
     name: Dépendances de l'application
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: samsteeven/easypharma-backend-lab
           ref: main

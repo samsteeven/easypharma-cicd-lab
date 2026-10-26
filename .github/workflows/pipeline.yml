@@ -35,10 +35,10 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Récupération de ce dépôt (définition du pipeline)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Récupération de l'application
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: samsteeven/easypharma-backend-lab
           ref: ${{ inputs.app_branch || 'main' }}
@@ -91,7 +91,7 @@ jobs:
       packages: write
       id-token: write   # signature « sans clé » de Cosign : le jeton OIDC de GitHub prouve quel workflow a signé
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           name: jar
