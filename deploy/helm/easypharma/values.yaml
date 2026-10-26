@@ -55,3 +55,16 @@ redis:
       memory: 32Mi
     limits:
       memory: 96Mi
+
+# RabbitMQ : l'application le contacte au démarrage et son indicateur de santé passe à DOWN s'il est absent.
+# Le compte « guest » de RabbitMQ n'est accepté que depuis localhost : on crée un compte dédié, mot de passe dans le secret.
+rabbitmq:
+  enabled: true
+  image: rabbitmq:3-alpine
+  username: easypharma
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 320Mi

@@ -17,6 +17,14 @@ spec:
         {{- include "easypharma.selector" . | nindent 8 }}
         app.kubernetes.io/component: backend
     spec:
+      {{- if .Values.postgres.enabled }}
+      initContainers:
+        # Le backend plante au démarrage si PostgreSQL ne répond pas encore : on l'attend ici plutôt que de compter
+        # sur les redémarrages du pod. L'image de PostgreSQL fournit déjà pg_isready.
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image }}
+          command: ["sh", "-c", "until pg_isready -h {{ .Release.Name }}-postgres -p 5432; do echo 'en attente de PostgreSQL'; sleep 2; done"]
+      {{- end }}
       containers:
         - name: backend
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -33,6 +41,17 @@ spec:
               value: "jdbc:postgresql://{{ .Release.Name }}-postgres:5432/{{ .Values.postgres.database }}"
             - name: SPRING_DATA_REDIS_HOST
               value: "{{ .Release.Name }}-redis"
+            {{- if .Values.rabbitmq.enabled }}
+            - name: SPRING_RABBITMQ_HOST
+              value: "{{ .Release.Name }}-rabbitmq"
+            - name: SPRING_RABBITMQ_USERNAME
+              value: {{ .Values.rabbitmq.username | quote }}
+            - name: SPRING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: RABBITMQ_PASSWORD
+            {{- end }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
