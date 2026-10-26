@@ -20,6 +20,11 @@ else
   url="$J/job/$JOB/buildWithParameters"
 fi
 code=$(curl -s -b "$jar" -u "$AUTH" -H "$crumb" -X POST "$url" -o /dev/null -w '%{http_code}')
+if [ "$code" = "400" ] && [ $# -eq 0 ]; then
+  # Après un redémarrage, JCasC recrée le job sans ses paramètres (ils ne sont connus qu'après une première exécution) :
+  # seule l'URL « build » est alors acceptée.
+  code=$(curl -s -b "$jar" -u "$AUTH" -H "$crumb" -X POST "$J/job/$JOB/build" -o /dev/null -w '%{http_code}')
+fi
 echo "declenchement : HTTP $code"
 if [ "$code" != "201" ]; then
   echo "Jenkins a refuse le declenchement"
