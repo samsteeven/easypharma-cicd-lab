@@ -1,0 +1,44 @@
+{{- if .Values.mailhog.enabled }}
+# SMTP de développement : il reçoit les courriels de l'application sans rien envoyer. Hors laboratoire, on pointe
+# SPRING_MAIL_HOST vers le vrai serveur de messagerie.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-mailhog
+  labels:
+    {{- include "easypharma.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "easypharma.selector" . | nindent 4 }}
+    app.kubernetes.io/component: mailhog
+  ports:
+    - name: smtp
+      port: 1025
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mailhog
+  labels:
+    {{- include "easypharma.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "easypharma.selector" . | nindent 6 }}
+      app.kubernetes.io/component: mailhog
+  template:
+    metadata:
+      labels:
+        {{- include "easypharma.selector" . | nindent 8 }}
+        app.kubernetes.io/component: mailhog
+    spec:
+      containers:
+        - name: mailhog
+          image: {{ .Values.mailhog.image }}
+          ports:
+            - name: smtp
+              containerPort: 1025
+          resources:
+            {{- toYaml .Values.mailhog.resources | nindent 12 }}
+{{- end }}

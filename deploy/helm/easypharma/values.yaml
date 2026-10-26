@@ -68,3 +68,14 @@ rabbitmq:
       memory: 128Mi
     limits:
       memory: 320Mi
+
+# SMTP de développement (MailHog) : l'application vérifie sa connexion à la messagerie dans son indicateur de santé.
+mailhog:
+  enabled: true
+  image: mailhog/mailhog:v1.0.1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      memory: 64Mi

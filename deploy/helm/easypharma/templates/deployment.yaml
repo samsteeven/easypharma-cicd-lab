@@ -41,6 +41,10 @@ spec:
               value: "jdbc:postgresql://{{ .Release.Name }}-postgres:5432/{{ .Values.postgres.database }}"
             - name: SPRING_DATA_REDIS_HOST
               value: "{{ .Release.Name }}-redis"
+            {{- if .Values.mailhog.enabled }}
+            - name: SPRING_MAIL_HOST
+              value: "{{ .Release.Name }}-mailhog"
+            {{- end }}
             {{- if .Values.rabbitmq.enabled }}
             - name: SPRING_RABBITMQ_HOST
               value: "{{ .Release.Name }}-rabbitmq"
