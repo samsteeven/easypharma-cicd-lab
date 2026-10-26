@@ -1,5 +1,5 @@
 # Image d'exécution du backend à partir d'un JAR déjà construit. Pas de Maven dans l'image : plus petite, plus rapide.
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 ARG JAR_FILE
 # UID numérique : Kubernetes (runAsNonRoot) ne peut pas vérifier qu'un utilisateur donné par son nom n'est pas root.
 RUN addgroup -S -g 10001 spring && adduser -S -u 10001 -G spring spring \
