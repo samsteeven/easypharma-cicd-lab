@@ -17,7 +17,7 @@ pipeline {
         string(name: 'APP_REPO', defaultValue: 'https://github.com/samsteeven/easypharma-backend-lab.git', description: 'Dépôt de l\'application')
         string(name: 'APP_BRANCH', defaultValue: 'main', description: 'Branche à construire')
         booleanParam(name: 'RUN_SONAR', defaultValue: true, description: 'Analyser avec SonarQube et attendre la porte qualité')
-        booleanParam(name: 'BLOQUER', defaultValue: true, description: 'Bloquer la publication si l'image contient une faille CRITIQUE corrigible (décocher = dérogation consciente)')
+        booleanParam(name: 'BLOQUER', defaultValue: true, description: 'Bloquer la publication si une faille CRITIQUE corrigible est trouvée dans cette image (décocher = dérogation consciente)')
         booleanParam(name: 'PUSH_IMAGE', defaultValue: true, description: 'Publier l\'image dans le registre local')
     }
 

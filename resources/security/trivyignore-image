@@ -1,0 +1,10 @@
+# Exceptions acceptées pour l'analyse de l'IMAGE, une par faille, avec la raison. Une seule source, lue par GitHub Actions
+# (pipeline.yml), par Jenkins (vars/securityScan.groovy) et par GitLab CI. Chaque exception expire : la porte redevient
+# rouge à l'échéance si on ne la revoit pas.
+#
+# CVE-2026-47884 : spring-webmvc, XsltView (chemin mal limité). CRITICAL.
+# CVE-2026-47890 : spring-webmvc / spring-webflux, flux Server-Sent Events corrompu avec des fragments de vue. CRITICAL.
+# Les deux : aucun correctif publié pour Spring Framework 6.2 (corrigées seulement en 7.0.9, donc avec Spring Boot 4).
+# Le backend n'utilise ni XsltView ni les SSE (aucune occurrence dans src et pom.xml). À revoir à la montée vers Spring Boot 4.
+CVE-2026-47884 exp:2027-01-31
+CVE-2026-47890 exp:2027-01-31
