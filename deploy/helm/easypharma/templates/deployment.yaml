@@ -17,6 +17,8 @@ spec:
         {{- include "easypharma.selector" . | nindent 8 }}
         app.kubernetes.io/component: backend
     spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- if .Values.postgres.enabled }}
       initContainers:
         # Le backend plante au démarrage si PostgreSQL ne répond pas encore : on l'attend ici plutôt que de compter
@@ -77,5 +79,16 @@ spec:
           livenessProbe:
             httpGet: { path: /actuator/health/liveness, port: http }
             periodSeconds: 20
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          # Système de fichiers en lecture seule : les seuls dossiers inscriptibles sont ceux que l'application utilise.
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: logs, mountPath: /app/logs }
+            - { name: uploads, mountPath: /app/uploads }
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: logs, emptyDir: {} }
+        - { name: uploads, emptyDir: {} }

@@ -16,6 +16,25 @@ service:
 # un secret ne se commite jamais (en production : External Secrets, Sealed Secrets ou le coffre de l'équipe).
 existingSecret: easypharma-secrets
 
+# Durcissement du backend (l'image tourne déjà avec l'UID 10001). Les images tierces (PostgreSQL, Redis, RabbitMQ,
+# MailHog) démarrent en root et ne sont pas contraintes ici : voir « Limites » du README.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# Isolation réseau : tout le trafic entrant est refusé, sauf les flux dont le backend a besoin.
+# Elle n'a d'effet que si le plugin réseau du cluster applique les NetworkPolicy.
+networkPolicy:
+  enabled: true
+
 env:
   SPRING_PROFILES_ACTIVE: prod
   # Le schéma est créé par Hibernate : le dépôt PostgreSQL n'a pas de migrations chargées (voir le README du backend).

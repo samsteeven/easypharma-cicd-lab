@@ -1,0 +1,60 @@
+{{- if .Values.networkPolicy.enabled }}
+# Refus par défaut du trafic entrant, puis une règle par flux nécessaire. Seul le trafic ENTRANT est restreint
+# (le backend sort librement : SMTP, API externes...).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-deny-ingress
+  labels:
+    {{- include "easypharma.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "easypharma.selector" . | nindent 6 }}
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-backend-to-services
+  labels:
+    {{- include "easypharma.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "easypharma.selector" . | nindent 6 }}
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: ["postgres", "redis", "rabbitmq", "mailhog"] }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "easypharma.selector" . | nindent 14 }}
+              app.kubernetes.io/component: backend
+      ports:
+        - { port: 5432 }
+        - { port: 6379 }
+        - { port: 5672 }
+        - { port: 1025 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-backend-http
+  labels:
+    {{- include "easypharma.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "easypharma.selector" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  policyTypes: ["Ingress"]
+  ingress:
+    # Les clients du backend (Ingress, autres pods du namespace) arrivent sur le port HTTP ; les sondes du kubelet
+    # viennent du nœud et ne sont pas filtrées.
+    - from:
+        - podSelector: {}
+      ports:
+        - { port: 8080 }
+{{- end }}
