@@ -6,6 +6,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export MSYS_NO_PATHCONV=1
 docker build -q -t easypharma-gitlab-ci-local gitlab >/dev/null
+
+# Variables du pipeline pour gitlab-ci-local, régénérées à chaque exécution à partir de .env : un jeton SonarQube
+# recopié une fois à la main devient faux dès que le serveur est recréé (HTTP 401 à l'analyse).
+set -a; . ./.env; set +a
+{ echo "SONAR_TOKEN: \"$SONAR_TOKEN\""; echo 'SONAR_HOST_URL: "http://host.docker.internal:9000"'; } > .gitlab-ci-local-variables.yml
 start=$(date +%s)
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
