@@ -17,3 +17,9 @@ misconfigurations:
       - deploy/helm/easypharma/templates/mailhog.yaml
       - deploy/helm/easypharma/templates/postgres.yaml
     statement: "Image tierce : utilisateur non root non essayé (UID propre à chaque image)."
+
+# Failles de l'image (pipeline.yml). Une seule exception, datée : elle réapparaît à l'échéance.
+vulnerabilities:
+  - id: CVE-2026-47884
+    expired_at: 2027-01-31
+    statement: "spring-webmvc (XsltView, chemin mal limité) : aucun correctif publié pour Spring Framework 6.2 (corrigé seulement en 7.0.9, donc Spring Boot 4). Le code du backend n'utilise pas XsltView (aucune occurrence de « Xslt » dans src ni pom.xml). À revoir à la montée vers Spring Boot 4."
