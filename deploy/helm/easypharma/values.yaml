@@ -4,7 +4,7 @@ image:
   # « localhost:5001 » est le registre local du laboratoire ; le cluster kind le lit grâce à la configuration de containerd
   # écrite par scripts/kind-up.sh.
   repository: localhost:5001/easypharma-backend
-  tag: "b7e8c2c-2"
+  tag: "b7e8c2c-1000"
   pullPolicy: IfNotPresent
 
 replicaCount: 1
