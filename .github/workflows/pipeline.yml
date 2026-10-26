@@ -140,6 +140,18 @@ jobs:
           helm upgrade --install essai deploy/helm/easypharma -n essai             --set image.repository="$IMAGE" --set image.tag="$TAG" --set image.pullPolicy=Never             --wait --timeout 5m
           kubectl -n essai get pods,networkpolicy -o wide | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # Mesure, pas un acquis : kindnet doit appliquer les NetworkPolicy pour qu'elles servent à quelque chose. Un pod qui
+      # porte les étiquettes du backend (témoin) doit joindre PostgreSQL ; un pod étranger ne le doit pas.
+      - name: Isolation réseau (mesure)
+        run: |
+          probe() { kubectl -n essai run "$1" --rm -i --restart=Never --image=busybox:1.37 "${@:2}" -- nc -z -w 3 essai-postgres 5432 >/dev/null 2>&1; }
+          if probe temoin --labels=app.kubernetes.io/name=easypharma,app.kubernetes.io/instance=essai,app.kubernetes.io/component=backend; then
+            if probe intrus; then R="NON appliquée : un pod étranger joint PostgreSQL"; else R="appliquée : un pod étranger ne joint pas PostgreSQL"; fi
+          else
+            R="mesure invalide : même le pod témoin n'a pas joint PostgreSQL"
+          fi
+          echo "Isolation réseau (kindnet) : $R" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Diagnostic si l'essai échoue
         if: failure()
         run: |
