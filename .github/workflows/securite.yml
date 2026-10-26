@@ -77,7 +77,7 @@ jobs:
           ref: main
       # Politique : les CRITICAL corrigibles bloquent, les HIGH sont rapportées. Ce dépôt ne contient pas l'application :
       # tant que l'équipe du backend n'a pas mis ses dépendances à jour, bloquer sur les HIGH garderait ce contrôle rouge.
-      - name: Trivy (pom.xml) : rapport HIGH et CRITICAL
+      - name: Trivy (pom.xml), rapport HIGH et CRITICAL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -87,7 +87,7 @@ jobs:
           ignore-unfixed: true
           format: table
           exit-code: "0"
-      - name: Trivy (pom.xml) : porte (CRITICAL corrigibles)
+      - name: Trivy (pom.xml), porte (CRITICAL corrigibles)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs

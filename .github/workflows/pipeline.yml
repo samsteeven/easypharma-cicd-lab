@@ -103,7 +103,7 @@ jobs:
           cp resources/docker/Dockerfile.jar Dockerfile.ci
           docker build -f Dockerfile.ci --build-arg JAR_FILE="$JAR" -t "$IMAGE:${{ needs.build-et-tests.outputs.tag }}" .
 
-      - name: Analyse de l'image (Trivy) : rapport HIGH et CRITICAL
+      - name: Analyse de l'image (Trivy), rapport HIGH et CRITICAL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ needs.build-et-tests.outputs.tag }}
