@@ -11,6 +11,10 @@ on:
       app_branch:
         description: "Branche de easypharma-backend-lab à construire"
         default: main
+      bloquer:
+        description: "Bloquer la publication si l'image contient une faille CRITIQUE corrigible (décocher = dérogation consciente)"
+        type: boolean
+        default: true
   push:
     branches: [main]
     paths:
@@ -99,7 +103,7 @@ jobs:
           cp resources/docker/Dockerfile.jar Dockerfile.ci
           docker build -f Dockerfile.ci --build-arg JAR_FILE="$JAR" -t "$IMAGE:${{ needs.build-et-tests.outputs.tag }}" .
 
-      - name: Analyse de l'image (Trivy)
+      - name: Analyse de l'image (Trivy) : rapport HIGH et CRITICAL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ needs.build-et-tests.outputs.tag }}
@@ -107,6 +111,18 @@ jobs:
           ignore-unfixed: true
           format: table
           exit-code: "0"
+
+      # Politique : une faille CRITIQUE pour laquelle un correctif existe bloque la publication. Les HIGH sont
+      # rapportées (étape précédente) mais ne bloquent pas. La dérogation (« bloquer » décoché) reste visible dans l'exécution.
+      - name: Porte de sécurité de l'image (CRITICAL corrigibles)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ needs.build-et-tests.outputs.tag }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: ${{ (github.event_name == 'workflow_dispatch' && inputs.bloquer == false) && '0' || '1' }}
+          skip-setup-trivy: true
 
       - name: Cluster kind pour l'essai
         uses: helm/kind-action@v1.15.1
@@ -121,7 +137,7 @@ jobs:
           kubectl create namespace essai
           # Secrets jetables, propres à cette exécution : rien n'est lu ni écrit ailleurs.
           kubectl -n essai create secret generic easypharma-secrets             --from-literal=JWT_SECRET="$(openssl rand -hex 48)"             --from-literal=DATABASE_PASSWORD="$(openssl rand -hex 16)"             --from-literal=RABBITMQ_PASSWORD="$(openssl rand -hex 16)"
-          helm upgrade --install essai deploy/helm/easypharma -n essai             --set image.repository="$IMAGE" --set image.tag="$TAG" --set image.pullPolicy=Never             --wait --timeout 8m
+          helm upgrade --install essai deploy/helm/easypharma -n essai             --set image.repository="$IMAGE" --set image.tag="$TAG" --set image.pullPolicy=Never             --wait --timeout 5m
           kubectl -n essai get pods,networkpolicy -o wide | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Diagnostic si l'essai échoue
@@ -129,7 +145,10 @@ jobs:
         run: |
           kubectl -n essai get pods -o wide || true
           kubectl -n essai describe pods || true
-          kubectl -n essai logs deploy/essai-backend --tail=80 || true
+          kubectl -n essai logs deploy/essai-backend -c wait-for-postgres --tail=20 || true
+          kubectl -n essai logs deploy/essai-backend -c backend --tail=80 || true
+          kubectl -n essai get networkpolicy -o yaml || true
+          kubectl -n essai get endpoints || true
 
       - uses: docker/login-action@v3
         with:

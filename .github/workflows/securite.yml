@@ -59,9 +59,10 @@ jobs:
           scan-ref: .
           # Les fichiers Docker du lab local (Jenkins, GitLab) ne sont pas livrés : seul ce qui part en production compte.
           skip-dirs: jenkins,gitlab,scripts
+          trivyignores: .trivyignore.yaml   # exceptions acceptées, une par composant, avec la raison
           severity: HIGH,CRITICAL
           format: table
-          exit-code: "0"
+          exit-code: "1"
       - uses: azure/setup-helm@v5.0.1
       - name: helm lint
         run: helm lint deploy/helm/easypharma --set existingSecret=easypharma-secrets
@@ -74,7 +75,9 @@ jobs:
         with:
           repository: samsteeven/easypharma-backend-lab
           ref: main
-      - name: Trivy (pom.xml)
+      # Politique : les CRITICAL corrigibles bloquent, les HIGH sont rapportées. Ce dépôt ne contient pas l'application :
+      # tant que l'équipe du backend n'a pas mis ses dépendances à jour, bloquer sur les HIGH garderait ce contrôle rouge.
+      - name: Trivy (pom.xml) : rapport HIGH et CRITICAL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -84,3 +87,14 @@ jobs:
           ignore-unfixed: true
           format: table
           exit-code: "0"
+      - name: Trivy (pom.xml) : porte (CRITICAL corrigibles)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+          skip-setup-trivy: true

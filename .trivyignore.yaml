@@ -1,0 +1,19 @@
+# Exceptions acceptées, une par composant, avec la raison. Tout le reste (HIGH et CRITICAL) fait échouer le contrôle.
+# Ce sont des services de développement tiers : leurs images démarrent en root et écrivent dans leur propre système de
+# fichiers. Les contraindre (utilisateur, volumes inscriptibles) demande de connaître chaque image : travail à faire,
+# pas une absence de risque. Le backend, lui, n'a aucune exception.
+misconfigurations:
+  - id: KSV-0014
+    paths:
+      - deploy/helm/easypharma/templates/redis.yaml
+      - deploy/helm/easypharma/templates/rabbitmq.yaml
+      - deploy/helm/easypharma/templates/mailhog.yaml
+      - deploy/helm/easypharma/templates/postgres.yaml
+    statement: "Image tierce : système de fichiers en lecture seule non essayé (RabbitMQ et PostgreSQL écrivent hors de leurs volumes)."
+  - id: KSV-0118
+    paths:
+      - deploy/helm/easypharma/templates/redis.yaml
+      - deploy/helm/easypharma/templates/rabbitmq.yaml
+      - deploy/helm/easypharma/templates/mailhog.yaml
+      - deploy/helm/easypharma/templates/postgres.yaml
+    statement: "Image tierce : utilisateur non root non essayé (UID propre à chaque image)."

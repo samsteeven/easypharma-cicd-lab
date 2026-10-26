@@ -33,6 +33,8 @@ spec:
       containers:
         - name: redis
           image: {{ .Values.redis.image }}
+          securityContext:
+            {{- toYaml .Values.baseSecurityContext | nindent 12 }}
           ports:
             - containerPort: 6379
           resources:

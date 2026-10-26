@@ -25,6 +25,8 @@ spec:
         # sur les redémarrages du pod. L'image de PostgreSQL fournit déjà pg_isready.
         - name: wait-for-postgres
           image: {{ .Values.postgres.image }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           command: ["sh", "-c", "until pg_isready -h {{ .Release.Name }}-postgres -p 5432; do echo 'en attente de PostgreSQL'; sleep 2; done"]
       {{- end }}
       containers:

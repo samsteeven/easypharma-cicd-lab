@@ -36,6 +36,8 @@ spec:
       containers:
         - name: mailhog
           image: {{ .Values.mailhog.image }}
+          securityContext:
+            {{- toYaml .Values.baseSecurityContext | nindent 12 }}
           ports:
             - name: smtp
               containerPort: 1025

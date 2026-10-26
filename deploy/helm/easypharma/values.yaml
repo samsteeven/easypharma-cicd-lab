@@ -30,6 +30,12 @@ securityContext:
   capabilities:
     drop: ["ALL"]
 
+# Images tierces : seul le minimum qui fonctionne sans connaître leur démarrage (elles démarrent en root).
+baseSecurityContext:
+  allowPrivilegeEscalation: false
+  seccompProfile:
+    type: RuntimeDefault
+
 # Isolation réseau : tout le trafic entrant est refusé, sauf les flux dont le backend a besoin.
 # Elle n'a d'effet que si le plugin réseau du cluster applique les NetworkPolicy.
 networkPolicy:
