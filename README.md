@@ -1,6 +1,7 @@
 # Laboratoire CI/CD autour d'EasyPharma
 
 [![Pipeline GitHub Actions](https://github.com/samsteeven/easypharma-cicd-lab/actions/workflows/pipeline.yml/badge.svg)](https://github.com/samsteeven/easypharma-cicd-lab/actions/workflows/pipeline.yml)
+[![Sécurité](https://github.com/samsteeven/easypharma-cicd-lab/actions/workflows/securite.yml/badge.svg)](https://github.com/samsteeven/easypharma-cicd-lab/actions/workflows/securite.yml)
 
 Le même pipeline (build et 75 tests, analyse SonarQube avec porte qualité, image Docker) écrit **trois fois** : pour **Jenkins** (`Jenkinsfile` déclaratif et bibliothèque partagée Groovy), pour **GitLab CI** et pour **GitHub Actions**, puis déployé sur un cluster **Kubernetes local (kind)** avec un **chart Helm** synchronisé par **ArgoCD**.
 
@@ -27,7 +28,7 @@ L'application est le backend Spring Boot de [`easypharma-backend-lab`](https://g
 | GitLab CI | `.gitlab-ci.yml` validé par le schéma, 3 jobs réussis | exécuté avec **`gitlab-ci-local`**, un émulateur, **pas sur un vrai GitLab** : je ne peux rien affirmer sur les runners partagés, les files d'attente, l'interface ni les environnements GitLab |
 | GitHub Actions | 2 runs réussis (cache vide, puis cache chaud), image publiée sur GHCR | pas d'étape SonarQube : mon serveur est local, injoignable depuis les runners GitHub |
 | Helm + ArgoCD | déploiement, correction de dérive, déploiement de version par commit, mesurés | un seul nœud kind, pas de webhook Git, pas d'Ingress ni de TLS |
-| Sécurité | aucun secret dans le dépôt ni son historique (contrôlé) ; secrets du cluster créés hors Git | `root` pour Jenkins (accès au socket Docker), webhooks SonarQube non validés : **laboratoire local seulement** |
+| Sécurité (DevSecOps) | secrets, Dockerfile, chart, dépendances et image analysés ; image essayée dans un cluster, publiée, SBOM et signature vérifiée : **sur GitHub Actions** (voir [Sécurité](#sécurité-devsecops)) | les étapes Jenkins et GitLab CI sont **écrites mais pas exécutées** ; `root` pour Jenkins (accès au socket Docker), webhooks SonarQube non validés : **laboratoire local seulement** |
 
 ## Les mesures
 
@@ -94,6 +95,45 @@ ArgoCD surveille `deploy/helm/easypharma` sur la branche `main` ; un commit qui 
 
 L'image déployée a été publiée dans le registre local par Jenkins (`b7e8c2c-2`), puis le déploiement suivant a utilisé celle de GitLab CI (`b7e8c2c-1000`) : les deux pipelines produisent une image que le cluster sait lancer.
 
+## Sécurité (DevSecOps)
+
+Des contrôles de sécurité sont intégrés au pipeline, avec une règle simple : **ce qui bloque est écrit, ce qui est toléré est écrit aussi, avec sa raison**. Tout ce qui est annoncé « exécuté » l'a été sur les runners GitHub (workflows `securite.yml` et `pipeline.yml`). Les étapes Jenkins (`vars/securityScan.groovy`) et GitLab CI sont les mêmes outils aux mêmes versions, **écrites mais jamais lancées** : le disque de ma machine était plein quand je les ai ajoutées.
+
+| Contrôle | Outil | Où | Ce qui s'est vraiment passé |
+|---|---|---|---|
+| Secrets dans le code **et l'historique** | gitleaks 8.30.1 (empreinte SHA-256 vérifiée) | `securite.yml` | Premier passage **rouge** : 3 constats, tous l'identifiant par défaut `admin:admin` de SonarQube que `scripts/bootstrap-sonar.sh` utilise une fois pour le remplacer. Ce n'est pas un secret : exception **étroite** dans `.gitleaks.toml` (ce fichier, cette valeur). Aucun autre constat dans l'historique. |
+| Qualité du Dockerfile | Hadolint | `securite.yml` | Passe au seuil « warning ». |
+| Configuration Dockerfile et Helm | Trivy (config) | `securite.yml` | Premier passage **rouge** : 13 constats HIGH (5 × `KSV-0014`, 8 × `KSV-0118`), **aucun sur le conteneur backend**. Le conteneur d'attente de PostgreSQL a été corrigé. Les 4 services tiers (PostgreSQL, Redis, RabbitMQ, MailHog) sont des **exceptions documentées** dans `.trivyignore.yaml`. |
+| Dépendances du code | Trivy (fs, `pom.xml`) | `securite.yml` | **4 HIGH** corrigibles : `org.postgresql:postgresql` 42.7.8 (2 failles, corrigées en 42.7.11 et 42.7.12) et `spring-boot-starter-actuator` 3.5.7 (2 contournements d'authentification, corrigés en 3.5.12). Aucune CRITICAL : la porte passe. |
+| Image Docker | Trivy (image) | `pipeline.yml` | **53 failles corrigibles dans le JAR : 43 HIGH et 10 CRITICAL** (Netty, Tomcat, Spring Security, Spring Framework...) et 1 HIGH dans Alpine (`brotli-libs`). **La porte est rouge** : la publication est bloquée. |
+| Essai de déploiement | kind + Helm, dans le job | `pipeline.yml` | Le chart durci (UID 10001 non root, système de fichiers en lecture seule, sans élévation de privilèges, `capabilities: drop ALL`, seccomp) démarre : backend prêt en moins d'une minute. |
+| Isolation réseau | NetworkPolicy + mesure | `pipeline.yml` | Mesurée : un pod étranger **ne joint pas** PostgreSQL, un pod portant les étiquettes du backend le joint (témoin). kindnet applique donc les NetworkPolicy. Seul le trafic **entrant** est restreint. |
+| SBOM | Syft (SPDX JSON) | `pipeline.yml` | Produit pour l'image publiée, conservé comme artefact. |
+| Signature | Cosign « sans clé » (OIDC de GitHub) | `pipeline.yml` | Image **signée par son condensat**, SBOM attesté, et `cosign verify` réussi dans le pipeline. La signature prouve **quel workflow** a produit l'image, pas que l'image est sans faille. |
+| Mises à jour | Dependabot | `.github/dependabot.yml` | Actions GitHub et image de base, chaque semaine. |
+| Avant le commit | pre-commit (gitleaks, hadolint) | `.pre-commit-config.yaml` | **Non essayé.** |
+
+### La politique, et ce qu'elle a donné
+
+- **Bloquent** : tout secret détecté ; les constats HIGH et CRITICAL du Dockerfile et du chart (hors exceptions) ; les failles **CRITICAL pour lesquelles un correctif existe**, dans les dépendances et dans l'image.
+- **Rapportées sans bloquer** : les HIGH des dépendances et de l'image. Bloquer dessus garderait le contrôle rouge tant que l'équipe du backend n'a pas mis ses dépendances à jour, et ce dépôt ne modifie pas l'application.
+- **Dérogation consciente** : `bloquer` décoché au lancement manuel de `pipeline.yml`. Elle est visible dans l'exécution, et le rapport complet reste dans le journal. Je l'ai utilisée pour aller au bout du pipeline (essai, publication, SBOM, signature) malgré les 10 CRITICAL. **Sans elle, la publication est refusée** : c'est le comportement par défaut, et je l'ai vérifié (exécution rouge, étapes suivantes ignorées).
+
+### Ce que ça a montré
+
+- **L'analyse du `pom.xml` voit 4 failles, l'analyse de l'image en voit 53.** Le fichier de dépendances ne liste que les versions déclarées ; le JAR contient aussi les dépendances transitives (Netty, Tomcat, Spring Security...). Analyser seulement le `pom.xml` donne une fausse tranquillité.
+- **Durcir un pod casse des choses qu'on ne soupçonne pas.** Le premier essai de déploiement est resté 5 minutes en attente : avec l'UID 10001, qui n'a pas d'entrée dans `/etc/passwd` de l'image PostgreSQL, `pg_isready` répond « no attempt » au lieu de se connecter. Corrigé par `-U postgres`. Sans l'essai dans un vrai cluster, ce chart durci aurait été remis à ArgoCD sans avoir démarré.
+- **Le coût** : l'exécution complète de `pipeline.yml` dure 4 min 50 s, contre 104 à 135 s avant ces contrôles (job de l'image : environ 3,5 minutes).
+
+### Ce qui n'est pas couvert
+
+- **Les 10 CRITICAL et 43 HIGH de l'image ne sont pas corrigées** : elles viennent des dépendances du backend (Spring Boot 3.5.7), que ce dépôt ne modifie pas. Un correctif serait une montée de version dans `easypharma-backend-lab` (les 75 tests serviraient de filet).
+- **Pas d'analyse statique du code dans GitHub Actions** (SonarQube n'y est pas), pas de CodeQL, pas de test dynamique (DAST).
+- **Les 2 problèmes de sécurité (note D) et 2 de fiabilité (note E) de SonarQube ne sont toujours pas triés** : relancer SonarQube n'était pas possible sans libérer du disque.
+- **Services tiers non durcis** (PostgreSQL, Redis, RabbitMQ, MailHog démarrent en root) ; pas de NetworkPolicy sortante ; pas de Pod Security Admission ; secrets créés à la main dans le cluster.
+- **La signature n'est pas vérifiée à l'admission** : rien n'empêche le cluster de lancer une image non signée (il faudrait Kyverno ou une règle équivalente).
+- **Jenkins et GitLab CI** : la signature sans clé repose sur l'OIDC de GitHub ; ces deux outils demanderaient une paire de clés ou leur propre jeton OIDC, non mis en place.
+
 ## Incidents rencontrés
 
 Chacun a été corrigé et reste visible dans l'historique Git.
@@ -139,7 +179,7 @@ GitHub Actions : `gh workflow run pipeline.yml`.
 - Un nœud Jenkins qui exécute les builds lui-même, en `root` ; un seul nœud kind ; pas de webhook Git ; pas de TLS ni d'Ingress.
 - Les durées sont des mesures isolées sur une seule machine. Elles montrent des ordres de grandeur, pas un classement des outils.
 - Les 75 tests du backend tournent sur H2 : le pipeline ne teste pas PostgreSQL ni SQL Server (voir `easypharma-backend-lab`).
-- Aucune analyse de l'image (Trivy ou équivalent) ni signature ; le registre local est en HTTP.
+- Le registre local est en HTTP. L'image du lab local (Jenkins, GitLab CI) n'est ni signée ni vérifiée ; l'analyse et la signature n'ont tourné que sur GitHub Actions.
 - L'image déployée dans le cluster n'est pas mise à jour automatiquement par la CI : le changement de `image.tag` est un commit manuel. Un pipeline réel l'écrirait lui-même (avec un jeton d'écriture sur le dépôt).
 - Les secrets de production (External Secrets, Sealed Secrets) ne sont pas traités.
 
@@ -147,11 +187,13 @@ GitHub Actions : `gh workflow run pipeline.yml`.
 
 ```
 Jenkinsfile                   pipeline déclaratif
-vars/ resources/              bibliothèque partagée Groovy (étapes et Dockerfile)
+vars/ resources/              bibliothèque partagée Groovy (étapes, dont securityScan, et Dockerfile)
 jenkins/                      Dockerfile, plugins et configuration JCasC du serveur
 docker-compose.yml            Jenkins, SonarQube, registre (phase 1)
 .gitlab-ci.yml  gitlab/       GitLab CI et le conteneur gitlab-ci-local
-.github/workflows/            GitHub Actions
+.github/workflows/            GitHub Actions : pipeline.yml (build, image, essai, SBOM, signature), securite.yml (contrôles)
+.gitleaks.toml .trivyignore.yaml   exceptions acceptées, avec leur raison
+.github/dependabot.yml  .pre-commit-config.yaml
 deploy/helm/easypharma/       chart Helm
 argocd/application.yaml       application ArgoCD
 kind/  scripts/               cluster kind et scripts (voir « Démarrer »)
