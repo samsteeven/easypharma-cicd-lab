@@ -153,7 +153,7 @@ Analyse refaite sur le backend corrigé : porte **verte**, couverture **28,7 %**
 | `S5122` CORS ouvert à toutes les origines (« pour le dev ») | **Corrigé** ([PR n°3 du backend](https://github.com/samsteeven/easypharma-backend-lab/pull/3)) : origines lues dans `app.cors.allowed-origins`, test qu'une origine inconnue est rejetée. |
 | `S2229` ×2, `@Transactional` ignoré (`EmployeePermissionService`) | **Vrai mais surévalué** (« bloquant ») : l'appel sur `this` contourne le proxy, mais `employee_id` est unique, donc pas de doublon possible. Corrigé dans la même PR. |
 
-Deux points que SonarQube ne signale pas, lus en passant et **non corrigés** : `/actuator/**` et `/h2-console/**` sont ouverts à tous dans la configuration de sécurité, et `metrics` et `prometheus` sont exposés dans tous les profils.
+Deux points que SonarQube ne signale pas, lus en passant et **corrigés** ([PR n°4 du backend](https://github.com/samsteeven/easypharma-backend-lab/pull/4)) : `/actuator/**` et `/h2-console/**` étaient ouverts à tous, et `metrics` et `prometheus` exposés dans tous les profils. Maintenant seuls `/actuator/health/**` et `/actuator/info` sont publics, les métriques ne sont ouvertes que dans le profil `observability`, la console H2 est éteinte par défaut. Quatre tests le vérifient. **Non revérifié** : la pile d'observabilité et les sondes dans kind n'ont pas été relancées depuis.
 
 ## Incidents rencontrés
 
