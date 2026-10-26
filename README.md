@@ -28,7 +28,7 @@ L'application est le backend Spring Boot de [`easypharma-backend-lab`](https://g
 | GitLab CI | `.gitlab-ci.yml` validé par le schéma, 3 jobs réussis | exécuté avec **`gitlab-ci-local`**, un émulateur, **pas sur un vrai GitLab** : je ne peux rien affirmer sur les runners partagés, les files d'attente, l'interface ni les environnements GitLab |
 | GitHub Actions | 2 runs réussis (cache vide, puis cache chaud), image publiée sur GHCR | pas d'étape SonarQube : mon serveur est local, injoignable depuis les runners GitHub |
 | Helm + ArgoCD | déploiement, correction de dérive, déploiement de version par commit, mesurés | un seul nœud kind, pas de webhook Git, pas d'Ingress ni de TLS |
-| Sécurité (DevSecOps) | secrets, Dockerfile, chart, dépendances et image analysés ; image essayée dans un cluster, publiée, SBOM et signature vérifiée : **sur GitHub Actions** (voir [Sécurité](#sécurité-devsecops)) | les étapes Jenkins et GitLab CI sont **écrites mais pas exécutées** ; `root` pour Jenkins (accès au socket Docker), webhooks SonarQube non validés : **laboratoire local seulement** |
+| Sécurité (DevSecOps) | secrets, Dockerfile, chart, dépendances et image analysés ; sur **GitHub Actions** : essai dans kind, SBOM, signature vérifiée ; sur **Jenkins** (build n°4, 408 s) et **GitLab CI émulé** : mêmes contrôles et même porte, publication de l'image dans le registre local (voir [Sécurité](#sécurité-devsecops)) | pas d'essai kind ni de signature dans Jenkins et GitLab CI ; pas de SBOM dans GitLab CI ; `root` pour Jenkins (accès au socket Docker), webhooks SonarQube non validés : **laboratoire local seulement** |
 
 ## Les mesures
 
@@ -97,7 +97,13 @@ L'image déployée a été publiée dans le registre local par Jenkins (`b7e8c2c
 
 ## Sécurité (DevSecOps)
 
-Des contrôles de sécurité sont intégrés au pipeline, avec une règle simple : **ce qui bloque est écrit, ce qui est toléré est écrit aussi, avec sa raison**. Tout ce qui est annoncé « exécuté » l'a été sur les runners GitHub (workflows `securite.yml` et `pipeline.yml`). Les étapes Jenkins (`vars/securityScan.groovy`) et GitLab CI sont les mêmes outils aux mêmes versions, **écrites mais jamais lancées** : le disque de ma machine était plein quand je les ai ajoutées.
+Des contrôles de sécurité sont intégrés au pipeline, avec une règle simple : **ce qui bloque est écrit, ce qui est toléré est écrit aussi, avec sa raison**. Ils ont tous tourné pour de vrai, mais pas tous partout :
+
+- **GitHub Actions** (`securite.yml`, `pipeline.yml`) : tout, y compris l'essai de déploiement dans kind, le SBOM et la signature Cosign.
+- **Jenkins** (`vars/securityScan.groovy`, build n°4 : succès en 408 s) : gitleaks, Trivy sur les dépendances, Hadolint, SonarQube et sa porte, Trivy sur l'image avec la même porte et les mêmes exceptions, SBOM Syft (SPDX, 297 paquets) archivé, publication. **Pas d'essai kind ni de signature.**
+- **GitLab CI, émulé** (`gitlab-ci-local`, 31 minutes, code de sortie 0) : gitleaks, Trivy dépendances, Hadolint, SonarQube (porte `PASSED`), Trivy sur l'image avec la même porte, publication. **Pas de SBOM, pas d'essai kind, pas de signature.** Rappel : ce n'est pas un vrai GitLab.
+
+Les tableaux ci-dessous décrivent les résultats du premier passage de chaque contrôle.
 
 | Contrôle | Outil | Où | Ce qui s'est vraiment passé |
 |---|---|---|---|
@@ -111,7 +117,7 @@ Des contrôles de sécurité sont intégrés au pipeline, avec une règle simple
 | SBOM | Syft (SPDX JSON) | `pipeline.yml` | Produit pour l'image publiée, conservé comme artefact. |
 | Signature | Cosign « sans clé » (OIDC de GitHub) | `pipeline.yml` | Image **signée par son condensat**, SBOM attesté, et `cosign verify` réussi dans le pipeline. La signature prouve **quel workflow** a produit l'image, pas que l'image est sans faille. |
 | Mises à jour | Dependabot | `.github/dependabot.yml` | Actions GitHub et image de base, chaque semaine. |
-| Avant le commit | pre-commit (gitleaks, hadolint) | `.pre-commit-config.yaml` | **Non essayé.** |
+| Avant le commit | pre-commit (gitleaks, hadolint) | `.pre-commit-config.yaml` | **Non essayé.** Le même gitleaks a tourné dans les trois pipelines. |
 
 ### La politique, et ce qu'elle a donné
 
@@ -132,10 +138,22 @@ Des contrôles de sécurité sont intégrés au pipeline, avec une règle simple
 - **Corrections faites dans le backend** ([PR n°1 de `easypharma-backend-lab`](https://github.com/samsteeven/easypharma-backend-lab/pull/1), 75 tests verts) : Spring Boot 3.5.7 vers 3.5.16, et versions de Netty, Tomcat, driver PostgreSQL et Jackson épinglées par leurs propriétés. Ce dépôt ne modifie toujours pas l'application : tant que cette PR n'est pas fusionnée, le pipeline lancé sur `main` construit l'ancienne version et reste rouge ; lancé sur la branche `deps/spring-boot-3.5.16`, il est vert avec la porte active.
 - **7 HIGH restent** dans l'image (dont protobuf 3.23.2, un client RabbitMQ, le driver SQL Server) : rapportées, pas bloquantes, non corrigées.
 - **Pas d'analyse statique du code dans GitHub Actions** (SonarQube n'y est pas), pas de CodeQL, pas de test dynamique (DAST).
-- **Les 2 problèmes de sécurité (note D) et 2 de fiabilité (note E) de SonarQube ne sont toujours pas triés** : relancer SonarQube n'était pas possible sans libérer du disque.
+- **SonarQube a été trié** (voir ci-dessous) mais **rien n'est corrigé côté SonarQube** : la couverture reste à 28,7 % et les 4 constats sont ouverts.
 - **Services tiers non durcis** (PostgreSQL, Redis, RabbitMQ, MailHog démarrent en root) ; pas de NetworkPolicy sortante ; pas de Pod Security Admission ; secrets créés à la main dans le cluster.
 - **La signature n'est pas vérifiée à l'admission** : rien n'empêche le cluster de lancer une image non signée (il faudrait Kyverno ou une règle équivalente).
-- **Jenkins et GitLab CI** : la signature sans clé repose sur l'OIDC de GitHub ; ces deux outils demanderaient une paire de clés ou leur propre jeton OIDC, non mis en place.
+- **Jenkins et GitLab CI** : la signature sans clé repose sur l'OIDC de GitHub ; ces deux outils demanderaient une paire de clés ou leur propre jeton OIDC, non mis en place. Le SBOM n'est produit que par GitHub Actions et Jenkins.
+
+### Triage des 4 problèmes de SonarQube
+
+Analyse refaite sur le backend corrigé : porte **verte**, couverture **28,7 %**, mêmes 2 problèmes de sécurité (note D) et 2 de fiabilité (note E). Lus dans le code :
+
+| Constat | Verdict |
+|---|---|
+| `S4502` CSRF désactivé (`WebSecurityConfig`, critique) | **Acceptable** : API sans session, jeton dans l'en-tête `Authorization`, aucun cookie. |
+| `S5122` CORS ouvert à toutes les origines (« pour le dev ») | **Corrigé** ([PR n°3 du backend](https://github.com/samsteeven/easypharma-backend-lab/pull/3)) : origines lues dans `app.cors.allowed-origins`, test qu'une origine inconnue est rejetée. |
+| `S2229` ×2, `@Transactional` ignoré (`EmployeePermissionService`) | **Vrai mais surévalué** (« bloquant ») : l'appel sur `this` contourne le proxy, mais `employee_id` est unique, donc pas de doublon possible. Corrigé dans la même PR. |
+
+Deux points que SonarQube ne signale pas, lus en passant et **non corrigés** : `/actuator/**` et `/h2-console/**` sont ouverts à tous dans la configuration de sécurité, et `metrics` et `prometheus` sont exposés dans tous les profils.
 
 ## Incidents rencontrés
 
@@ -149,6 +167,11 @@ Chacun a été corrigé et reste visible dans l'historique Git.
 6. **Backend en `DOWN` dans Kubernetes** : l'application attend RabbitMQ et un serveur SMTP, que mon premier chart ne déployait pas. Ajoutés, au lieu de masquer les indicateurs de santé.
 7. **Backend qui plante au premier démarrage** : il démarrait avant PostgreSQL ; ajout d'un conteneur d'initialisation.
 8. **Dossier `app/` ajouté par erreur au dépôt** : c'est le clone de l'application recopié par l'émulateur. Retiré du commit avant qu'il ne serve, et ignoré par Git.
+9. **`Jenkinsfile` invalide, trouvé seulement en l'exécutant** : une apostrophe non échappée dans une description de paramètre, ajoutée avec les étapes de sécurité alors que je ne pouvais pas les lancer. Le linter du serveur l'a refusée ; `main` est resté cassé jusqu'à la PR n°9.
+10. **Jeton SonarQube périmé, deux fois (HTTP 401)** : `bootstrap-sonar.sh` gardait le jeton de `.env`, que le serveur recréé ne connaissait plus ; le fichier `.gitlab-ci-local-variables.yml` recopié à la main avait le même défaut. Les scripts régénèrent maintenant le jeton ou le fichier.
+11. **gitleaks voyait deux historiques dans Jenkins** : le dossier de travail contient celui de ce dépôt (le `Jenkinsfile`) et celui de l'application. 4 constats au lieu de 1 ; l'analyse est limitée à `--log-opts=HEAD`.
+12. **Un vrai secret par défaut dans l'application** : `scripts/run-tests.ps1` du backend contenait une valeur fixe pour `JWT_SECRET` (commit `81d94d7`). Le script génère maintenant un secret jetable ; la valeur reste dans l'historique, listée dans `.gitleaksignore` du backend. **Je n'ai pas pu établir si elle a servi ailleurs que pour les tests locaux.**
+13. **Disque C: plein pendant l'analyse de l'image (11 Mo libres)** : Docker et Jenkins se sont figés. Supprimer des images ne rend rien à Windows : `docker_data.vhdx` ne rétrécit pas seul, il a fallu compacter le disque virtuel. À prévoir avant de lancer cette pile sur un poste serré.
 
 ## Démarrer
 
