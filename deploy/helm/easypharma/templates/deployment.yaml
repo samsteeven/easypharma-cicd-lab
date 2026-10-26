@@ -22,12 +22,13 @@ spec:
       {{- if .Values.postgres.enabled }}
       initContainers:
         # Le backend plante au démarrage si PostgreSQL ne répond pas encore : on l'attend ici plutôt que de compter
-        # sur les redémarrages du pod. L'image de PostgreSQL fournit déjà pg_isready.
+        # sur les redémarrages du pod. L'image de PostgreSQL fournit déjà pg_isready. « -U postgres » est obligatoire
+        # maintenant que le pod tourne en UID 10001 : sans nom d'utilisateur connu, pg_isready répond « no attempt ».
         - name: wait-for-postgres
           image: {{ .Values.postgres.image }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          command: ["sh", "-c", "until pg_isready -h {{ .Release.Name }}-postgres -p 5432; do echo 'en attente de PostgreSQL'; sleep 2; done"]
+          command: ["sh", "-c", "until pg_isready -U postgres -h {{ .Release.Name }}-postgres -p 5432; do echo 'en attente de PostgreSQL'; sleep 2; done"]
       {{- end }}
       containers:
         - name: backend
