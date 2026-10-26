@@ -119,6 +119,7 @@ jobs:
         with:
           image-ref: ${{ env.IMAGE }}:${{ needs.build-et-tests.outputs.tag }}
           severity: CRITICAL
+          trivyignores: .trivyignore.yaml   # exceptions datées, avec la raison
           ignore-unfixed: true
           format: table
           exit-code: ${{ (github.event_name == 'workflow_dispatch' && inputs.bloquer == false) && '0' || '1' }}
