@@ -1,0 +1,100 @@
+# Contrôles de sécurité qui ne dépendent pas de l'image : secrets, Dockerfile, chart Helm, dépendances de l'application.
+# Ils tournent à chaque push et à chaque pull request, et une fois par semaine : de nouvelles failles sont publiées
+# sans que le code change.
+# L'analyse de l'image, le SBOM et la signature sont dans pipeline.yml (ils ont besoin de l'image construite).
+name: Sécurité
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  # Empreinte SHA-256 publiée avec la version : on vérifie le binaire avant de l'exécuter.
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
+jobs:
+  secrets:
+    name: Secrets dans le dépôt et son historique
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tout l'historique : un secret supprimé plus tard reste lisible dans les anciens commits
+      - name: Installation de gitleaks (empreinte vérifiée)
+        run: |
+          curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+      - name: Analyse (valeurs masquées dans les journaux)
+        run: ./gitleaks git --redact --verbose --exit-code 1 --report-format sarif --report-path gitleaks.sarif .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitleaks
+          path: gitleaks.sarif
+          if-no-files-found: ignore
+
+  configuration:
+    name: Dockerfile et chart Helm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hadolint (Dockerfile)
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: resources/docker/Dockerfile.jar
+          failure-threshold: warning
+      - name: Trivy (Dockerfile et chart Helm)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          # Les fichiers Docker du lab local (Jenkins, GitLab) ne sont pas livrés : seul ce qui part en production compte.
+          skip-dirs: jenkins,gitlab,scripts
+          trivyignores: .trivyignore.yaml   # exceptions acceptées, une par composant, avec la raison
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: "1"
+      - uses: azure/setup-helm@v5.0.1
+      - name: helm lint
+        run: helm lint deploy/helm/easypharma --set existingSecret=easypharma-secrets
+
+  dependances:
+    name: Dépendances de l'application
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: samsteeven/easypharma-backend-lab
+          ref: main
+      # Politique : les CRITICAL corrigibles bloquent, les HIGH sont rapportées. Ce dépôt ne contient pas l'application :
+      # tant que l'équipe du backend n'a pas mis ses dépendances à jour, bloquer sur les HIGH garderait ce contrôle rouge.
+      - name: Trivy (pom.xml), rapport HIGH et CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "0"
+      - name: Trivy (pom.xml), porte (CRITICAL corrigibles)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+          skip-setup-trivy: true

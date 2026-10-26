@@ -34,6 +34,8 @@ spec:
       containers:
         - name: rabbitmq
           image: {{ .Values.rabbitmq.image }}
+          securityContext:
+            {{- toYaml .Values.baseSecurityContext | nindent 12 }}
           ports:
             - name: amqp
               containerPort: 5672

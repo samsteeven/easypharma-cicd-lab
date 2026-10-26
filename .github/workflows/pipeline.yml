@@ -1,6 +1,8 @@
 # Même pipeline que le Jenkinsfile et le .gitlab-ci.yml, écrit pour GitHub Actions : build et tests, image Docker.
 # Pas d'étape SonarQube : le serveur du laboratoire est local et injoignable depuis les runners GitHub.
 # (SonarCloud ou un SonarQube exposé la remplaceraient : voir le README.)
+# Étape image : construction, analyse Trivy, déploiement d'essai dans kind, PUIS publication, SBOM et signature.
+# Rien n'est publié si l'image n'a pas passé l'analyse et démarré dans un cluster.
 name: Pipeline backend
 
 on:
@@ -9,6 +11,10 @@ on:
       app_branch:
         description: "Branche de easypharma-backend-lab à construire"
         default: main
+      bloquer:
+        description: "Bloquer la publication si l'image contient une faille CRITIQUE corrigible (décocher = dérogation consciente)"
+        type: boolean
+        default: true
   push:
     branches: [main]
     paths:
@@ -80,22 +86,117 @@ jobs:
   image-docker:
     needs: build-et-tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # signature « sans clé » de Cosign : le jeton OIDC de GitHub prouve quel workflow a signé
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: jar
           path: jar
+
+      - name: Construction (sans publier)
+        run: |
+          JAR=$(ls jar/*.jar | grep -v '.original' | head -1)
+          cp resources/docker/Dockerfile.jar Dockerfile.ci
+          docker build -f Dockerfile.ci --build-arg JAR_FILE="$JAR" -t "$IMAGE:${{ needs.build-et-tests.outputs.tag }}" .
+
+      - name: Analyse de l'image (Trivy), rapport HIGH et CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ needs.build-et-tests.outputs.tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "0"
+
+      # Politique : une faille CRITIQUE pour laquelle un correctif existe bloque la publication. Les HIGH sont
+      # rapportées (étape précédente) mais ne bloquent pas. La dérogation (« bloquer » décoché) reste visible dans l'exécution.
+      - name: Porte de sécurité de l'image (CRITICAL corrigibles)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ needs.build-et-tests.outputs.tag }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: ${{ (github.event_name == 'workflow_dispatch' && inputs.bloquer == false) && '0' || '1' }}
+          skip-setup-trivy: true
+
+      - name: Cluster kind pour l'essai
+        uses: helm/kind-action@v1.15.1
+        with:
+          cluster_name: essai
+
+      - name: Déploiement d'essai avec le chart Helm
+        env:
+          TAG: ${{ needs.build-et-tests.outputs.tag }}
+        run: |
+          kind load docker-image "$IMAGE:$TAG" --name essai
+          kubectl create namespace essai
+          # Secrets jetables, propres à cette exécution : rien n'est lu ni écrit ailleurs.
+          kubectl -n essai create secret generic easypharma-secrets             --from-literal=JWT_SECRET="$(openssl rand -hex 48)"             --from-literal=DATABASE_PASSWORD="$(openssl rand -hex 16)"             --from-literal=RABBITMQ_PASSWORD="$(openssl rand -hex 16)"
+          helm upgrade --install essai deploy/helm/easypharma -n essai             --set image.repository="$IMAGE" --set image.tag="$TAG" --set image.pullPolicy=Never             --wait --timeout 5m
+          kubectl -n essai get pods,networkpolicy -o wide | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Mesure, pas un acquis : kindnet doit appliquer les NetworkPolicy pour qu'elles servent à quelque chose. Un pod qui
+      # porte les étiquettes du backend (témoin) doit joindre PostgreSQL ; un pod étranger ne le doit pas.
+      - name: Isolation réseau (mesure)
+        run: |
+          probe() { kubectl -n essai run "$1" --rm -i --restart=Never --image=busybox:1.37 "${@:2}" -- nc -z -w 3 essai-postgres 5432 >/dev/null 2>&1; }
+          if probe temoin --labels=app.kubernetes.io/name=easypharma,app.kubernetes.io/instance=essai,app.kubernetes.io/component=backend; then
+            if probe intrus; then R="NON appliquée : un pod étranger joint PostgreSQL"; else R="appliquée : un pod étranger ne joint pas PostgreSQL"; fi
+          else
+            R="mesure invalide : même le pod témoin n'a pas joint PostgreSQL"
+          fi
+          echo "Isolation réseau (kindnet) : $R" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Diagnostic si l'essai échoue
+        if: failure()
+        run: |
+          kubectl -n essai get pods -o wide || true
+          kubectl -n essai describe pods || true
+          kubectl -n essai logs deploy/essai-backend -c wait-for-postgres --tail=20 || true
+          kubectl -n essai logs deploy/essai-backend -c backend --tail=80 || true
+          kubectl -n essai get networkpolicy -o yaml || true
+          kubectl -n essai get endpoints || true
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Construction et publication
+
+      - name: Publication
+        id: push
+        env:
+          TAG: ${{ needs.build-et-tests.outputs.tag }}
         run: |
-          JAR=$(ls jar/*.jar | grep -v '.original' | head -1)
-          cp resources/docker/Dockerfile.jar Dockerfile.ci
-          TAG="${{ needs.build-et-tests.outputs.tag }}"
-          docker build -f Dockerfile.ci --build-arg JAR_FILE="$JAR" -t "$IMAGE:$TAG" .
           docker push "$IMAGE:$TAG"
-          echo "Image publiée : $IMAGE:$TAG" >> "$GITHUB_STEP_SUMMARY"
+          DIGEST=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$TAG")
+          echo "ref=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Image publiée : $DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: SBOM (Syft)
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          image: ${{ steps.push.outputs.ref }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom.spdx.json
+
+      - uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Signature et attestation du SBOM (Cosign, sans clé)
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          cosign sign --yes "$REF"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+
+      - name: Vérification de la signature
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          cosign verify "$REF"             --certificate-identity-regexp '^https://github.com/samsteeven/easypharma-cicd-lab/'             --certificate-oidc-issuer https://token.actions.githubusercontent.com | tee -a "$GITHUB_STEP_SUMMARY"

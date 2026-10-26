@@ -4,6 +4,8 @@
  *
  * Le client Docker parle au démon de l'hôte (socket monté dans le conteneur Jenkins) : « localhost:5001 » désigne donc
  * le registre publié sur l'hôte, celui que le cluster kind lira plus tard.
+ *
+ * Option scan: true (et block: false pour une dérogation consciente) : analyse Trivy de l'image avant la publication.
  */
 def call(Map cfg = [:]) {
     String image = cfg.image ?: error('dockerBuildPush : image est obligatoire')
@@ -18,6 +20,10 @@ def call(Map cfg = [:]) {
         error('dockerBuildPush : aucun JAR dans target/ (mavenBuild a-t-il tourné ?)')
     }
     sh "docker build -f Dockerfile.ci --build-arg JAR_FILE=${jar} --label org.opencontainers.image.revision=${env.GIT_SHORT ?: 'inconnu'} -t ${ref} ."
+    if (cfg.scan) {
+        // Analyse AVANT publication : une image refusée n'arrive jamais dans le registre.
+        securityScan(check: 'image', image: ref, block: cfg.block != false)
+    }
     sh "docker push ${ref}"
     echo "Image publiée : ${ref}"
     return ref

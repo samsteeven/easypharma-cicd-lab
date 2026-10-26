@@ -1,0 +1,9 @@
+# Règles par défaut de gitleaks + une exception, étroite et justifiée.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Identifiant par défaut de SonarQube (admin:admin), documenté par l'éditeur : scripts/bootstrap-sonar.sh l'utilise une fois pour le remplacer par un mot de passe aléatoire (.env). Ce n'est pas un secret."
+condition = "AND"
+paths = ['''scripts/bootstrap-sonar\.sh$''']
+regexes = ['''admin:admin''']

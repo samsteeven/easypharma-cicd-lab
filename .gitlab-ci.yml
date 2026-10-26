@@ -9,6 +9,7 @@
 stages:
   - build
   - quality
+  - security
   - package
 
 variables:
@@ -62,6 +63,38 @@ sonarqube:
       -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.token="$SONAR_TOKEN"
       -Dsonar.qualitygate.wait=true -Dsonar.scm.disabled=true
 
+# --- Sécurité : mêmes outils et mêmes versions que .github/workflows/securite.yml -------------------------------------
+# ÉCRIT MAIS PAS EXÉCUTÉ dans ce laboratoire (disque plein au moment de l'ajout) : seule la version GitHub Actions a tourné.
+secrets:
+  stage: security
+  needs: ["build-et-tests"]
+  image:
+    name: zricethezav/gitleaks:v8.30.1
+    entrypoint: [""]
+  script:
+    - cd app
+    # --redact : la valeur du secret n'apparaît pas dans le journal.
+    - gitleaks git --redact --exit-code 1 .
+
+dependances:
+  stage: security
+  needs: ["build-et-tests"]
+  image:
+    name: aquasec/trivy:0.70.0
+    entrypoint: [""]
+  script:
+    - cd app
+    - trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed .
+    - trivy fs --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 .
+
+dockerfile:
+  stage: security
+  image:
+    name: hadolint/hadolint:v2.15.1-alpine
+    entrypoint: [""]
+  script:
+    - hadolint --failure-threshold warning resources/docker/Dockerfile.jar
+
 image-docker:
   stage: package
   # Le client Docker parle au démon de l'hôte (socket monté, voir le README) : « localhost:5001 » est le registre local.
@@ -75,5 +108,8 @@ image-docker:
     - JAR=$(ls target/*.jar | grep -v '.original' | head -1)
     - TAG="${GIT_SHORT}-${CI_PIPELINE_ID}"
     - docker build -f Dockerfile.ci --build-arg JAR_FILE="$JAR" --label org.opencontainers.image.revision="$GIT_SHORT" -t "$REGISTRY/$IMAGE_NAME:$TAG" .
+    # Analyse AVANT publication. BLOQUER=0 (variable du pipeline) = dérogation consciente : le rapport reste dans le journal.
+    - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image --severity HIGH,CRITICAL --ignore-unfixed "$REGISTRY/$IMAGE_NAME:$TAG"
+    - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 image --severity CRITICAL --ignore-unfixed --exit-code "${BLOQUER:-1}" "$REGISTRY/$IMAGE_NAME:$TAG"
     - docker push "$REGISTRY/$IMAGE_NAME:$TAG"
     - echo "Image publiée $REGISTRY/$IMAGE_NAME:$TAG"

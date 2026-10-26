@@ -17,13 +17,18 @@ spec:
         {{- include "easypharma.selector" . | nindent 8 }}
         app.kubernetes.io/component: backend
     spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- if .Values.postgres.enabled }}
       initContainers:
         # Le backend plante au démarrage si PostgreSQL ne répond pas encore : on l'attend ici plutôt que de compter
-        # sur les redémarrages du pod. L'image de PostgreSQL fournit déjà pg_isready.
+        # sur les redémarrages du pod. L'image de PostgreSQL fournit déjà pg_isready. « -U postgres » est obligatoire
+        # maintenant que le pod tourne en UID 10001 : sans nom d'utilisateur connu, pg_isready répond « no attempt ».
         - name: wait-for-postgres
           image: {{ .Values.postgres.image }}
-          command: ["sh", "-c", "until pg_isready -h {{ .Release.Name }}-postgres -p 5432; do echo 'en attente de PostgreSQL'; sleep 2; done"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command: ["sh", "-c", "until pg_isready -U postgres -h {{ .Release.Name }}-postgres -p 5432; do echo 'en attente de PostgreSQL'; sleep 2; done"]
       {{- end }}
       containers:
         - name: backend
@@ -77,5 +82,16 @@ spec:
           livenessProbe:
             httpGet: { path: /actuator/health/liveness, port: http }
             periodSeconds: 20
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          # Système de fichiers en lecture seule : les seuls dossiers inscriptibles sont ceux que l'application utilise.
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: logs, mountPath: /app/logs }
+            - { name: uploads, mountPath: /app/uploads }
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: logs, emptyDir: {} }
+        - { name: uploads, emptyDir: {} }

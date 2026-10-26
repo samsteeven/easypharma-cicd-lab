@@ -1,0 +1,11 @@
+# Mises à jour automatiques proposées en pull request : actions GitHub et image de base du Dockerfile.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /resources/docker
+    schedule:
+      interval: weekly

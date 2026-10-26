@@ -17,6 +17,7 @@ pipeline {
         string(name: 'APP_REPO', defaultValue: 'https://github.com/samsteeven/easypharma-backend-lab.git', description: 'Dépôt de l\'application')
         string(name: 'APP_BRANCH', defaultValue: 'main', description: 'Branche à construire')
         booleanParam(name: 'RUN_SONAR', defaultValue: true, description: 'Analyser avec SonarQube et attendre la porte qualité')
+        booleanParam(name: 'BLOQUER', defaultValue: true, description: 'Bloquer la publication si l'image contient une faille CRITIQUE corrigible (décocher = dérogation consciente)')
         booleanParam(name: 'PUSH_IMAGE', defaultValue: true, description: 'Publier l\'image dans le registre local')
     }
 
@@ -49,6 +50,16 @@ pipeline {
             }
         }
 
+        // Contrôles de sécurité en parallèle (voir vars/securityScan.groovy). Non exécutés dans ce laboratoire : le README
+        // dit ce qui a tourné pour de vrai (GitHub Actions) et ce qui a seulement été écrit.
+        stage('Sécurité') {
+            parallel {
+                stage('Secrets') { steps { securityScan(check: 'secrets') } }
+                stage('Dépendances') { steps { securityScan(check: 'dependances') } }
+                stage('Dockerfile') { steps { securityScan(check: 'dockerfile') } }
+            }
+        }
+
         stage('SonarQube') {
             when { expression { params.RUN_SONAR } }
             steps {
@@ -68,7 +79,7 @@ pipeline {
         stage('Image Docker') {
             when { expression { params.PUSH_IMAGE } }
             steps {
-                dockerBuildPush(image: env.IMAGE_NAME, registry: env.REGISTRY, tag: env.IMAGE_TAG)
+                dockerBuildPush(image: env.IMAGE_NAME, registry: env.REGISTRY, tag: env.IMAGE_TAG, scan: true, block: params.BLOQUER)
             }
         }
     }
