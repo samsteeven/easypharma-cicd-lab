@@ -35,7 +35,7 @@ jobs:
           tar -xzf gitleaks.tgz gitleaks
       - name: Analyse (valeurs masquées dans les journaux)
         run: ./gitleaks git --redact --verbose --exit-code 1 --report-format sarif --report-path gitleaks.sarif .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: gitleaks

@@ -69,7 +69,7 @@ jobs:
 
       - name: Publication du rapport de tests
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rapports-tests
           path: |
@@ -78,7 +78,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Conservation du JAR pour l'étape suivante
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jar
           path: app/target/*.jar
