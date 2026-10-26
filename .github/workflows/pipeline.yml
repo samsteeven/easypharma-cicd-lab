@@ -92,7 +92,7 @@ jobs:
       id-token: write   # signature « sans clé » de Cosign : le jeton OIDC de GitHub prouve quel workflow a signé
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: jar
           path: jar
